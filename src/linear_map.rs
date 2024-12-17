@@ -572,7 +572,11 @@ pub mod rkyv {
     use rkyv::ser::{Allocator, Writer};
     use rkyv::{Archive, Deserialize, Place, Serialize};
 
-    impl<K, V> ExactSizeIterator for Iter<'_, K, V> {}
+    impl<K, V> ExactSizeIterator for Iter<'_, K, V> {
+        fn len(&self) -> usize {
+            self.iter.len()
+        }
+    }
 
     impl<K, V: Archive, const N: usize> Archive for LinearMap<K, V, N>
     where

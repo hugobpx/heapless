@@ -561,6 +561,68 @@ where
 {
 }
 
+#[cfg(feature = "rkyv")]
+/// Enables rkyv integration
+pub mod rkyv {
+    use crate::linear_map::Iter;
+    use crate::LinearMap;
+    use core::hash::Hash;
+    use rkyv::collections::swiss_table::{ArchivedHashMap, HashMapResolver};
+    use rkyv::rancor::{Fallible, Source};
+    use rkyv::ser::{Allocator, Writer};
+    use rkyv::{Archive, Deserialize, Place, Serialize};
+
+    impl<K, V> ExactSizeIterator for Iter<'_, K, V> {}
+
+    impl<K, V: Archive, const N: usize> Archive for LinearMap<K, V, N>
+    where
+        K: Archive + Hash + Eq,
+        K::Archived: Hash + Eq,
+    {
+        type Archived = ArchivedHashMap<K::Archived, V::Archived>;
+        type Resolver = HashMapResolver;
+
+        fn resolve(&self, resolver: Self::Resolver, out: Place<Self::Archived>) {
+            ArchivedHashMap::resolve_from_len(self.len(), (7, 8), resolver, out);
+        }
+    }
+
+    impl<K, V, S, const N: usize> Serialize<S> for LinearMap<K, V, N>
+    where
+        K: Serialize<S> + Hash + Eq + Clone,
+        K::Archived: Hash + Eq,
+        V: Serialize<S> + Clone,
+        S: Fallible + Writer + Allocator + ?Sized,
+        S::Error: Source,
+    {
+        fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+            ArchivedHashMap::<K::Archived, V::Archived>::serialize_from_iter::<_, _, _, K, V, _>(
+                self.iter(),
+                (7, 8),
+                serializer,
+            )
+        }
+    }
+
+    impl<K, V, D, const N: usize> Deserialize<LinearMap<K, V, N>, D>
+        for ArchivedHashMap<K::Archived, V::Archived>
+    where
+        K: Archive + Hash + Eq,
+        K::Archived: Deserialize<K, D> + Hash + Eq,
+        V: Archive,
+        V::Archived: Deserialize<V, D>,
+        D: Fallible + ?Sized,
+    {
+        fn deserialize(&self, deserializer: &mut D) -> Result<LinearMap<K, V, N>, D::Error> {
+            let mut result = LinearMap::new();
+            for (k, v) in self.iter() {
+                let _ = result.insert(k.deserialize(deserializer)?, v.deserialize(deserializer)?);
+            }
+            Ok(result)
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use static_assertions::assert_not_impl_any;
